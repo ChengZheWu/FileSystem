@@ -5,6 +5,9 @@
 #include <map>
 
 class HelloFS : public FileSystem {
+private:
+    // 這是我們的「硬碟」：路徑 -> 檔案內容
+    std::map<std::string, std::string> m_files;
 public:
     HelloFS(); // 建構子
 
