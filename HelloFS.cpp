@@ -2,131 +2,114 @@
 #include <cstring>
 #include <cerrno>
 #include <iostream>
-#include <algorithm> // std::min, std::copy
+#include <fcntl.h>      // open
+#include <unistd.h>     // pread, pwrite, close, unlink
+#include <sys/stat.h>   // lstat
+#include <dirent.h>     // opendir, readdir
 
-HelloFS::HelloFS() {
-    std::cout << "[HelloFS] Initialized" << std::endl;
-    // 初始化預設檔案
-    m_files["/hello"] = "Hello World! This is OOP FUSE.\n";
+HelloFS::HelloFS(std::string rootPath) : m_root_path(std::move(rootPath)) {
+    // 確保路徑最後沒有 '/'，方便後面拼接
+    if (!m_root_path.empty() && m_root_path.back() == '/') {
+        m_root_path.pop_back();
+    }
+    std::cout << "[HelloFS] Storage Root: " << m_root_path << std::endl;
+}
+
+std::string HelloFS::GetRealPath(const char* path) {
+    return m_root_path + path;
 }
 
 int HelloFS::GetAttr(const char *path, struct stat *stbuf) {
-    std::memset(stbuf, 0, sizeof(struct stat));
+    std::string realPath = GetRealPath(path);
     
-    if (std::string(path) == "/") {
-        stbuf->st_mode = S_IFDIR | 0755;
-        stbuf->st_nlink = 2;
-        return 0;
-    } 
+    // lstat 是 Linux System Call，直接讀取真實檔案的屬性
+    int res = lstat(realPath.c_str(), stbuf);
+    if (res == -1)
+        return -errno;
 
-    // 檢查檔案是否存在於我們的 map 中
-    auto it = m_files.find(path);
-    if (it != m_files.end()) {
-        // 找到了！
-        stbuf->st_mode = S_IFREG | 0666; // 0666 = Read/Write
-        stbuf->st_nlink = 1;
-        stbuf->st_size = it->second.size(); // 真實的檔案大小
-        return 0;
-    }
-
-    return -ENOENT;
+    return 0;
 }
 
 int HelloFS::Unlink(const char *path) {
-    auto count = m_files.erase(path);
-    return (count > 0) ? 0 : -ENOENT;
+    std::string realPath = GetRealPath(path);
+    int res = unlink(realPath.c_str());
+    if (res == -1)
+        return -errno;
+    return 0;
 }
 
 int HelloFS::Open(const char *path, struct fuse_file_info *fi) {
-    if (m_files.find(path) == m_files.end())
-        return -ENOENT;
+    std::string realPath = GetRealPath(path);
+    
+    // 將 FUSE 的 flags 直接傳給底層 open
+    int fd = open(realPath.c_str(), fi->flags);
+    if (fd == -1)
+        return -errno;
+
+    // ★ 關鍵：把 fd 存在 fuse_file_info 裡，傳給 Read/Write 使用
+    fi->fh = static_cast<uint64_t>(fd);
+    
     return 0;
 }
 
 int HelloFS::Read(const char *path, char *buf, size_t size, off_t offset, struct fuse_file_info *fi) {
-    (void) fi;
-    
-    auto it = m_files.find(path);
-    if (it == m_files.end())
-        return -ENOENT;
+    (void) path;
+    // 直接用 Open 時存下來的 fd (fi->fh)
+    // pread 會從指定的 offset 讀取，不會改變檔案的當前指標，適合多執行緒
+    int res = pread(fi->fh, buf, size, offset);
+    if (res == -1)
+        return -errno;
 
-    const std::string &content = it->second;
-    size_t len = content.size();
-
-    if (static_cast<size_t>(offset) >= len)
-        return 0;
-
-    if (offset + size > len)
-        size = len - offset;
-
-    memcpy(buf, content.data() + offset, size);
-
-    return size;
+    return res;
 }
 
-// --- 以下是不支援的操作，直接回傳錯誤 ---
-
 int HelloFS::Write(const char *path, const char *buf, size_t size, off_t offset, struct fuse_file_info *fi) {
-    (void) fi;
-    std::cout << "[Write] path: " << path << ", size: " << size << ", offset: " << offset << std::endl;
+    (void) path;
+    // pwrite 直接寫入指定 offset
+    int res = pwrite(fi->fh, buf, size, offset);
+    if (res == -1)
+        return -errno;
 
-    auto it = m_files.find(path);
-    if (it == m_files.end()) {
-        return -ENOENT;
-    }
-
-    std::string &content = it->second;
-
-    // 如果寫入位置超過目前檔案大小，需要擴充檔案 (用 '\0' 填補中間空洞)
-    if (offset + size > content.size()) {
-        content.resize(offset + size, '\0');
-    }
-
-    // 將資料 copy 到 string 的指定位置
-    // copy(來源起始, 來源結束, 目標起始)
-    // 這裡我們直接用 std::string 的 replace 或 copy 也可以，但 memcpy/loop 最直觀
-    for (size_t i = 0; i < size; ++i) {
-        content[offset + i] = buf[i];
-    }
-
-    return size; // 回傳實際寫入的 byte 數
+    return res;
 }
 
 int HelloFS::Release(const char *path, struct fuse_file_info *fi) {
-    (void) path; (void) fi;
-    return 0; // 沒做什麼特別的資源分配，直接 return 0
+    (void) path;
+    // 關閉檔案描述符
+    close(fi->fh);
+    return 0;
 }
 
 int HelloFS::ReadDir(const char *path, void *buf, fuse_fill_dir_t filler, off_t offset, struct fuse_file_info *fi, enum fuse_readdir_flags flags) {
-    (void) offset; (void) fi; (void) flags;
+    std::string realPath = GetRealPath(path);
+    DIR *dp = opendir(realPath.c_str());
+    if (dp == NULL)
+        return -errno;
 
-    if (std::string(path) != "/")
-        return -ENOENT;
-
-    filler(buf, ".", nullptr, 0, FUSE_FILL_DIR_PLUS);
-    filler(buf, "..", nullptr, 0, FUSE_FILL_DIR_PLUS);
-
-    // 遍歷我們的 map，把所有檔案名稱都列出來
-    for (const auto& [filepath, content] : m_files) {
-        // map 裡存的是 "/hello", "/test"，但 readdir 只需要檔名 "hello", "test"
-        // 我們簡單處理：把開頭的 "/" 去掉
-        if (filepath.size() > 1 && filepath[0] == '/') {
-            filler(buf, filepath.c_str() + 1, nullptr, 0, FUSE_FILL_DIR_PLUS);
-        }
+    struct dirent *de;
+    while ((de = readdir(dp)) != NULL) {
+        struct stat st;
+        std::memset(&st, 0, sizeof(st));
+        st.st_ino = de->d_ino;
+        st.st_mode = de->d_type << 12;
+        
+        // 將真實目錄下的檔案回報給 FUSE
+        if (filler(buf, de->d_name, &st, 0, FUSE_FILL_DIR_PLUS))
+            break;
     }
 
+    closedir(dp);
     return 0;
 }
 
 int HelloFS::Create(const char *path, mode_t mode, struct fuse_file_info *fi) {
-    (void) mode; (void) fi;
-    std::cout << "[Create] " << path << std::endl;
-    
-    if (m_files.count(path)) {
-        return -EEXIST; // 檔案已存在
-    }
+    std::string realPath = GetRealPath(path);
 
-    // 建立一個空的檔案內容
-    m_files[path] = ""; 
+    // 建立新檔案
+    int fd = open(realPath.c_str(), fi->flags, mode);
+    if (fd == -1)
+        return -errno;
+
+    fi->fh = static_cast<uint64_t>(fd);
     return 0;
 }

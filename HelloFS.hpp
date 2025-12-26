@@ -6,10 +6,12 @@
 
 class HelloFS : public FileSystem {
 private:
-    // 這是我們的「硬碟」：路徑 -> 檔案內容
-    std::map<std::string, std::string> m_files;
+    std::string m_root_path; // 用來存 "storage" 的真實路徑
+
+    // 輔助函式：把 "/hello" 轉成 "/home/user/.../storage/hello"
+    std::string GetRealPath(const char* path);
 public:
-    HelloFS(); // 建構子
+    HelloFS(std::string rootPath); // 建構子，傳入儲存路徑
 
     // 必須實作的介面 (Override)
     int GetAttr(const char *path, struct stat *stbuf) override;

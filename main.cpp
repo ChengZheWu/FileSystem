@@ -1,6 +1,8 @@
 #include "HelloFS.hpp"
 #include <memory>
 #include <iostream>
+#include <unistd.h>
+#include <climits> // for PATH_MAX
 
 // 全域指標：指向目前運作的 FS 實例
 static std::unique_ptr<FileSystem> fs_instance;
@@ -47,7 +49,19 @@ static const struct fuse_operations myfs_oper = {
 };
 
 int main(int argc, char *argv[]) {
-    fs_instance = std::make_unique<HelloFS>();
+    // 1. 取得目前的絕對路徑
+    char cwd[PATH_MAX];
+    if (getcwd(cwd, sizeof(cwd)) != NULL) {
+        std::string storagePath = std::string(cwd) + "/storage";
+        
+        std::cout << "Mounting HelloFS with backing store: " << storagePath << std::endl;
+        
+        // 2. 初始化 FS，傳入路徑
+        fs_instance = std::make_unique<HelloFS>(storagePath);
+    } else {
+        perror("getcwd() error");
+        return 1;
+    }
 
     umask(0);
     return fuse_main(argc, argv, &myfs_oper, NULL);
