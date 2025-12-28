@@ -90,9 +90,14 @@ bool HelloFS::LookupInode(const char* path, Inode* out_inode) {
 
 // 尋找空閒資源 (First Fit 演算法)
 int HelloFS::AllocateResource(int bitmap_block_idx, int max_count) {
+    // 進入此函式馬上上鎖！
+    // 直到這個函式 return 之前，其他執行緒都會被擋在外面等待
+    std::lock_guard<std::mutex> lock(m_alloc_mutex);
+
     // 讀取整個 Bitmap Block
     uint8_t bitmap[BLOCK_SIZE];
-    if (pread(m_fd, bitmap, BLOCK_SIZE, bitmap_block_idx * BLOCK_SIZE) != BLOCK_SIZE) {
+    off_t offset = bitmap_block_idx * BLOCK_SIZE;
+    if (pread(m_fd, bitmap, BLOCK_SIZE, offset) != BLOCK_SIZE) {
         return -1;
     }
 
@@ -104,15 +109,19 @@ int HelloFS::AllocateResource(int bitmap_block_idx, int max_count) {
         // 檢查該 bit 是否為 0
         if (!((bitmap[byte_idx] >> bit_idx) & 0x1)) {
             // 找到空位了！馬上標記為已使用
-            SetResourceStatus(bitmap_block_idx, i, true);
+            bitmap[byte_idx] |= (1 << bit_idx);
+            pwrite(m_fd, bitmap, BLOCK_SIZE, offset);
             return i; // 回傳編號
         }
     }
-    return -1; // 沒空間了
+    return -1; // 沒空間了 (鎖會在這裡自動釋放)
 }
 
 // 更新 Bitmap
 void HelloFS::SetResourceStatus(int bitmap_block_idx, int index, bool used) {
+    // 釋放資源或強制設定時，也要上鎖
+    std::lock_guard<std::mutex> lock(m_alloc_mutex);
+
     uint8_t bitmap[BLOCK_SIZE];
     off_t offset = bitmap_block_idx * BLOCK_SIZE;
 
@@ -199,8 +208,8 @@ int HelloFS::Write(const char *path, const char *buf, size_t size, off_t offset,
         return -ENOENT;
     }
 
-    // 簡化限制：我們只支援 4KB 以下的小檔案，且只支援一次寫入
-    // 如果 offset > 0 或是 size > 4096，我們先報錯 (這可以之後再來優化)
+    // 我們只支援 4KB 以下的小檔案
+    // 限制：寫入的「終點位置 (offset + size)」不能超過 Block 的大小
     if (size > BLOCK_SIZE) {
         return -EFBIG; // File too large
     }

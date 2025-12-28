@@ -4,11 +4,17 @@
 #include "FSLayout.hpp" // 記得 include 剛剛寫好的 Layout
 #include <unistd.h>
 #include <fcntl.h>
+#include <mutex>
 
 class HelloFS : public FileSystem {
 private:
     int m_fd;           // myfs.img 的檔案描述符
     Superblock m_sb;    // 記憶體中緩存的 Superblock
+
+    // --- 互斥鎖 ---
+    // 這把鎖用來保護 "AllocateResource" 和 "SetResourceStatus"
+    // 確保不會有兩個人同時搶同一個 Inode 或 Data Block
+    std::mutex m_alloc_mutex;
 
     // Helper: 給定 inode index，把資料讀出來
     // 回傳 true 代表讀取成功
