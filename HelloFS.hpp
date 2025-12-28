@@ -38,6 +38,7 @@ public:
     // 必須實作的介面 (Override)
     int GetAttr(const char *path, struct stat *stbuf) override;
     int Unlink(const char *path) override;
+    int Truncate(const char *path, off_t size, struct fuse_file_info *fi) override;
     int Read(const char *path, char *buf, size_t size, off_t offset, struct fuse_file_info *fi) override;
     int Open(const char *path, struct fuse_file_info *fi) override;
     int Write(const char *path, const char *buf, size_t size, off_t offset, struct fuse_file_info *fi) override;

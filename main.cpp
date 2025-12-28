@@ -15,6 +15,9 @@ namespace bridge {
     int unlink(const char *path) {
         return fs_instance->Unlink(path);
     }
+    int truncate(const char *path, off_t size, struct fuse_file_info *fi) {
+        return fs_instance->Truncate(path, size, fi);
+    }
     int open(const char *path, struct fuse_file_info *fi) {
         return fs_instance->Open(path, fi);
     }
@@ -40,16 +43,16 @@ namespace bridge {
 
 // FUSE Operations Table
 static const struct fuse_operations myfs_oper = {
-    .getattr = bridge::getattr,
-    .unlink  = bridge::unlink,
-    // truncate
-    .open    = bridge::open,
-    .read    = bridge::read,
-    .write   = bridge::write,
-    .release = bridge::release,
-    .readdir = bridge::readdir,
-    .create  = bridge::create,
-    .utimens = bridge::utimens,
+    .getattr  = bridge::getattr,
+    .unlink   = bridge::unlink,
+    .truncate = bridge::truncate,
+    .open     = bridge::open,
+    .read     = bridge::read,
+    .write    = bridge::write,
+    .release  = bridge::release,
+    .readdir  = bridge::readdir,
+    .create   = bridge::create,
+    .utimens  = bridge::utimens,
 };
 
 int main(int argc, char *argv[]) {

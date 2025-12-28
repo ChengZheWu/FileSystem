@@ -15,6 +15,7 @@ public:
     // "= 0" 代表子類別「必須」實作這些功能
     virtual int GetAttr(const char *path, struct stat *stbuf) = 0;
     virtual int Unlink(const char *path) = 0;
+    virtual int Truncate(const char *path, off_t size, struct fuse_file_info *fi) = 0;
     virtual int Open(const char *path, struct fuse_file_info *fi) = 0;
     virtual int Read(const char *path, char *buf, size_t size, off_t offset, struct fuse_file_info *fi) = 0;
     virtual int Write(const char *path, const char *buf, size_t size, off_t offset, struct fuse_file_info *fi) = 0;

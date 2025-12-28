@@ -166,8 +166,50 @@ int HelloFS::Unlink(const char *path) {
     return -errno;
 }
 
+int HelloFS::Truncate(const char *path, off_t new_size, struct fuse_file_info *fi) {
+    (void) fi;
+    std::cout << "[Truncate] " << path << " to size " << new_size << std::endl;
+
+    std::lock_guard<std::mutex> lock(m_alloc_mutex);
+    
+    Inode inode;
+    if (!LookupInode(path, &inode)) {
+        return -ENOENT;
+    }
+
+    // 1. 更新記憶體中的大小
+    inode.size = new_size;
+
+    // 2. 寫回 Inode Table
+    off_t inode_offset = (3 * BLOCK_SIZE) + (inode.inode_no * sizeof(Inode));
+    pwrite(m_fd, &inode, sizeof(Inode), inode_offset);
+
+    // 進階 (Optional): 
+    // 如果 new_size == 0，其實應該要把 Data Bitmap 對應的 bit 清成 0 (釋放空間)。
+    // 如果 new_size < old_size，應該要把切掉的資料清空。
+    // 但目前我們先做到「更新 Size」就好，這樣就能解決 "Ghost Tail" 的問題。
+
+    return 0;
+}
+
 int HelloFS::Open(const char *path, struct fuse_file_info *fi) {
-    return -errno;
+    // 1. 檢查檔案是否存在
+    Inode inode;
+    if (!LookupInode(path, &inode)) {
+        return -ENOENT;
+    }
+
+    // 檢查 O_TRUNC
+    // 如果 Kernel 要求 Atomic Truncate，我們就在這裡手動執行截斷
+    if (fi->flags & O_TRUNC) {
+        std::cout << "[Open] O_TRUNC detected, truncating file..." << std::endl;
+        
+        // 呼叫我們剛剛實作的 Truncate 函式
+        // 注意：Truncate 裡面有上鎖，所以 Open 這裡不要上鎖，避免死鎖
+        Truncate(path, 0, fi);
+    }
+
+    return 0;
 }
 
 int HelloFS::Read(const char *path, char *buf, size_t size, off_t offset, struct fuse_file_info *fi) {
