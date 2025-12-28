@@ -33,6 +33,9 @@ namespace bridge {
     int create(const char *path, mode_t mode, struct fuse_file_info *fi) {
         return fs_instance->Create(path, mode, fi);
     }
+    int utimens(const char *path, const struct timespec tv[2], struct fuse_file_info *fi) {
+        return fs_instance->Utimens(path, tv, fi);
+    }
 }
 
 // FUSE Operations Table
@@ -46,20 +49,18 @@ static const struct fuse_operations myfs_oper = {
     .release = bridge::release,
     .readdir = bridge::readdir,
     .create  = bridge::create,
+    .utimens = bridge::utimens,
 };
 
 int main(int argc, char *argv[]) {
-    // 1. 取得目前的絕對路徑
+    // 取得 myfs.img 的絕對路徑
     char cwd[PATH_MAX];
     if (getcwd(cwd, sizeof(cwd)) != NULL) {
-        std::string storagePath = std::string(cwd) + "/storage";
+        std::string imgPath = std::string(cwd) + "/myfs.img";
         
-        std::cout << "Mounting HelloFS with backing store: " << storagePath << std::endl;
-        
-        // 2. 初始化 FS，傳入路徑
-        fs_instance = std::make_unique<HelloFS>(storagePath);
+        // 這裡會觸發 HelloFS 的建構子，讀取 Superblock
+        fs_instance = std::make_unique<HelloFS>(imgPath.c_str());
     } else {
-        perror("getcwd() error");
         return 1;
     }
 

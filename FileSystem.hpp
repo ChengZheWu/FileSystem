@@ -21,7 +21,7 @@ public:
     virtual int Release(const char *path, struct fuse_file_info *fi) = 0;
     virtual int ReadDir(const char *path, void *buf, fuse_fill_dir_t filler, off_t offset, struct fuse_file_info *fi, enum fuse_readdir_flags flags) = 0;
     virtual int Create(const char *path, mode_t mode, struct fuse_file_info *fi) = 0;
-
+    virtual int Utimens(const char *path, const struct timespec tv[2], struct fuse_file_info *fi) = 0;
     
     // 初始化 (Optional)
     virtual void Init() {}

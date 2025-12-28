@@ -2,25 +2,25 @@
 ```
 make
 ```
-2. 確保 mnt, storage 存在
+2. 格式化硬碟 myfs.img
 ```
-mkdir -p mnt storage
-
-# 先隨便塞個檔案進去測試
-echo "I am real file" > storage/test.txt
+./mkfs
 ```
 3. 執行掛載
 ```
 ./myfs -f mnt
 ```
-4. 驗證
+4. 建立檔案
 ```
-ls -l mnt
-# 應該會看到 test.txt！
-
-cat mnt/test.txt
-# 內容應該是 "I am real file"
-
-echo "FUSE is cool" > mnt/newfile.txt
-# 去檢查 storage/newfile.txt，看看檔案是不是真的出現了？
+# 分配 Inode 1 (檢查 Log 是否顯示 Inode 1 allocated)
+touch mnt/a.txt
+```
+5. 寫入資料
+```
+# 分配 Data Block 0 (檢查 Log 是否顯示 Block allocated)
+echo "Hello" > mnt/a.txt
+```
+6. 讀取資料
+```
+cat mnt/a.txt
 ```
