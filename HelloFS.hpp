@@ -31,6 +31,10 @@ private:
 
     // 把指定 index 的 bit 設為 1 (佔用) 或 0 (釋放) 並寫回硬碟
     void SetResourceStatus(int bitmap_block_idx, int index, bool used);
+
+    // 內部實作：負責改 Inode，但不負責上鎖
+    int TruncateWithoutLock(const char *path, off_t size, struct fuse_file_info *fi);
+
 public:
     HelloFS(const char* img_path);
     ~HelloFS();

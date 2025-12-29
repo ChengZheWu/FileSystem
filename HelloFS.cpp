@@ -90,9 +90,6 @@ bool HelloFS::LookupInode(const char* path, Inode* out_inode) {
 
 // 尋找空閒資源 (First Fit 演算法)
 int HelloFS::AllocateResource(int bitmap_block_idx, int max_count) {
-    // 進入此函式馬上上鎖！
-    // 直到這個函式 return 之前，其他執行緒都會被擋在外面等待
-    std::lock_guard<std::mutex> lock(m_alloc_mutex);
 
     // 讀取整個 Bitmap Block
     uint8_t bitmap[BLOCK_SIZE];
@@ -119,8 +116,6 @@ int HelloFS::AllocateResource(int bitmap_block_idx, int max_count) {
 
 // 更新 Bitmap
 void HelloFS::SetResourceStatus(int bitmap_block_idx, int index, bool used) {
-    // 釋放資源或強制設定時，也要上鎖
-    std::lock_guard<std::mutex> lock(m_alloc_mutex);
 
     uint8_t bitmap[BLOCK_SIZE];
     off_t offset = bitmap_block_idx * BLOCK_SIZE;
@@ -142,6 +137,10 @@ void HelloFS::SetResourceStatus(int bitmap_block_idx, int index, bool used) {
 }
 
 int HelloFS::GetAttr(const char *path, struct stat *stbuf) {
+    // 進入此函式馬上上鎖！
+    // 直到這個函式 return 之前，其他執行緒都會被擋在外面等待
+    std::lock_guard<std::mutex> lock(m_alloc_mutex);
+
     std::memset(stbuf, 0, sizeof(struct stat));
     
     Inode inode;
@@ -163,7 +162,59 @@ int HelloFS::GetAttr(const char *path, struct stat *stbuf) {
 }
 
 int HelloFS::Unlink(const char *path) {
-    return -errno;
+    std::cout << "[Unlink] Deleting file: " << path << std::endl;
+
+    std::lock_guard<std::mutex> lock(m_alloc_mutex);
+
+    // 1. 先找出這個檔案的 Inode
+    Inode inode;
+    if (!LookupInode(path, &inode)) {
+        return -ENOENT; // 找不到檔案，無法刪除
+    }
+
+    // 2. 回收 Data Block (如果檔案有配 Data Block)
+    if (inode.block_no != 0) {
+        // 我們之前定義 Data Region 從 Block 10 開始
+        // 所以 Bitmap index = block_no - 10
+        // (請確保這跟你的 FSLayout.hpp 定義一致，或是你的 Write 邏輯一致)
+        int data_bitmap_idx = inode.block_no - 10;
+        
+        // Block 2 是 Data Bitmap，將該 bit 設為 0 (False)
+        SetResourceStatus(2, data_bitmap_idx, false);
+        
+        std::cout << "[Unlink] Data Block " << inode.block_no << " freed." << std::endl;
+    }
+
+    // 3. 回收 Inode
+    // Block 1 是 Inode Bitmap，將該 bit 設為 0 (False)
+    SetResourceStatus(1, inode.inode_no, false);
+    std::cout << "[Unlink] Inode " << inode.inode_no << " freed." << std::endl;
+
+    // 4. (Optional) 清空 Inode Table 裡的資料
+    // 雖然 Bitmap 設為 0 系統就不會配發這個 Inode 了，但把舊資料擦掉是好習慣
+    // 這樣下次分配到這個 Inode 時，不會讀到上一個檔案的殘留檔名
+    Inode empty_inode;
+    std::memset(&empty_inode, 0, sizeof(Inode));
+    
+    off_t inode_offset = (3 * BLOCK_SIZE) + (inode.inode_no * sizeof(Inode));
+    pwrite(m_fd, &empty_inode, sizeof(Inode), inode_offset);
+
+    return 0;
+}
+
+int HelloFS::TruncateWithoutLock(const char *path, off_t new_size, struct fuse_file_info *fi) {
+    // 這裡不上鎖，我們信任呼叫者 (Open 或 Public Truncate) 已經鎖好了
+    
+    Inode inode;
+    if (!LookupInode(path, &inode)) {
+        return -ENOENT;
+    }
+
+    inode.size = new_size;
+    off_t inode_offset = (3 * BLOCK_SIZE) + (inode.inode_no * sizeof(Inode));
+    pwrite(m_fd, &inode, sizeof(Inode), inode_offset);
+
+    return 0;
 }
 
 int HelloFS::Truncate(const char *path, off_t new_size, struct fuse_file_info *fi) {
@@ -193,26 +244,31 @@ int HelloFS::Truncate(const char *path, off_t new_size, struct fuse_file_info *f
 }
 
 int HelloFS::Open(const char *path, struct fuse_file_info *fi) {
-    // 1. 檢查檔案是否存在
-    Inode inode;
-    if (!LookupInode(path, &inode)) {
-        return -ENOENT;
-    }
+
+    std::lock_guard<std::mutex> lock(m_alloc_mutex);
 
     // 檢查 O_TRUNC
     // 如果 Kernel 要求 Atomic Truncate，我們就在這裡手動執行截斷
     if (fi->flags & O_TRUNC) {
         std::cout << "[Open] O_TRUNC detected, truncating file..." << std::endl;
         
-        // 呼叫我們剛剛實作的 Truncate 函式
-        // 注意：Truncate 裡面有上鎖，所以 Open 這裡不要上鎖，避免死鎖
-        Truncate(path, 0, fi);
+        // 呼叫 Truncate 無上鎖版
+        TruncateWithoutLock(path, 0, fi);
+    }
+
+    // 檢查檔案是否存在
+    Inode inode;
+    if (!LookupInode(path, &inode)) {
+        return -ENOENT;
     }
 
     return 0;
 }
 
 int HelloFS::Read(const char *path, char *buf, size_t size, off_t offset, struct fuse_file_info *fi) {
+
+    std::lock_guard<std::mutex> lock(m_alloc_mutex);
+
     (void) fi;
 
     Inode inode;
@@ -242,6 +298,9 @@ int HelloFS::Read(const char *path, char *buf, size_t size, off_t offset, struct
 }
 
 int HelloFS::Write(const char *path, const char *buf, size_t size, off_t offset, struct fuse_file_info *fi) {
+
+    std::lock_guard<std::mutex> lock(m_alloc_mutex);
+
     (void) fi;
     
     // 1. 讀取 Inode
@@ -291,11 +350,16 @@ int HelloFS::Write(const char *path, const char *buf, size_t size, off_t offset,
     return size;
 }
 
+// 當open檔案有建立新物件時，才需要在這邊release資源，避免memory leak
+// 目前open並沒有建立新物件，所以不需要實作這個功能
 int HelloFS::Release(const char *path, struct fuse_file_info *fi) {
     return -errno;
 }
 
 int HelloFS::ReadDir(const char *path, void *buf, fuse_fill_dir_t filler, off_t offset, struct fuse_file_info *fi, enum fuse_readdir_flags flags) {
+    
+    std::lock_guard<std::mutex> lock(m_alloc_mutex);
+    
     (void) offset; (void) fi; (void) flags;
 
     // 只有根目錄 "/" 可以列出檔案
@@ -322,6 +386,9 @@ int HelloFS::ReadDir(const char *path, void *buf, fuse_fill_dir_t filler, off_t 
 }
 
 int HelloFS::Create(const char *path, mode_t mode, struct fuse_file_info *fi) {
+    
+    std::lock_guard<std::mutex> lock(m_alloc_mutex);
+    
     (void) mode; (void) fi;
     std::cout << "[Create] Creating file: " << path << std::endl;
 
@@ -356,6 +423,9 @@ int HelloFS::Create(const char *path, mode_t mode, struct fuse_file_info *fi) {
 }
 
 int HelloFS::Utimens(const char *path, const struct timespec tv[2], struct fuse_file_info *fi) {
+    
+    std::lock_guard<std::mutex> lock(m_alloc_mutex);
+    
     (void) path; (void) tv; (void) fi;
     return 0; // 假裝時間設定成功
 }
