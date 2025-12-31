@@ -1,7 +1,7 @@
 #pragma once
 
 #include "FileSystem.hpp"
-#include "FSLayout.hpp" // 記得 include 剛剛寫好的 Layout
+#include "FSLayout.hpp"
 #include <unistd.h>
 #include <fcntl.h>
 #include <mutex>
@@ -11,16 +11,16 @@ private:
     int m_fd;           // myfs.img 的檔案描述符
     Superblock m_sb;    // 記憶體中緩存的 Superblock
 
-    // --- 互斥鎖 ---
+    // 互斥鎖 
     // 這把鎖用來保護 "AllocateResource" 和 "SetResourceStatus"
     // 確保不會有兩個人同時搶同一個 Inode 或 Data Block
     std::mutex m_alloc_mutex;
 
-    // Helper: 給定 inode index，把資料讀出來
+    // 給定 inode index，把資料讀出來
     // 回傳 true 代表讀取成功
     bool GetInode(uint32_t inode_no, Inode* out_inode);
 
-    // Helper: 給定路徑 (e.g., "/test"), 找出對應的 Inode
+    // 給定路徑 (e.g., "/test"), 找出對應的 Inode
     // 回傳 true 代表找到
     bool LookupInode(const char* path, Inode* out_inode);
 

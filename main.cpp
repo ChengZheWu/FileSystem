@@ -7,7 +7,7 @@
 // 全域指標：指向目前運作的 FS 實例
 static std::unique_ptr<FileSystem> fs_instance;
 
-// 橋接函式 (Trampolines)
+// 橋接函式
 namespace bridge {
     int getattr(const char *path, struct stat *stbuf, struct fuse_file_info *fi) {
         return fs_instance->GetAttr(path, stbuf);
@@ -61,7 +61,7 @@ int main(int argc, char *argv[]) {
     if (getcwd(cwd, sizeof(cwd)) != NULL) {
         std::string imgPath = std::string(cwd) + "/myfs.img";
         
-        // 這裡會觸發 HelloFS 的建構子，讀取 Superblock
+        // 觸發 HelloFS 的建構子，讀取 Superblock
         fs_instance = std::make_unique<HelloFS>(imgPath.c_str());
     } else {
         return 1;

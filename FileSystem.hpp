@@ -11,7 +11,7 @@ public:
     // 否則用 Base 指標 delete Derived 物件時會 Memory Leak。
     virtual ~FileSystem() = default;
 
-    // 定義純虛擬函式 (Pure Virtual Functions)
+    // 定義純虛擬函式
     // "= 0" 代表子類別「必須」實作這些功能
     virtual int GetAttr(const char *path, struct stat *stbuf) = 0;
     virtual int Unlink(const char *path) = 0;

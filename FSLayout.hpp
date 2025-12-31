@@ -4,9 +4,9 @@
 // 硬碟設定
 const uint64_t BLOCK_SIZE = 4096;       // 4KB
 const uint64_t DISK_SIZE  = 10 * 1024 * 1024; // 10MB
-const uint64_t NUM_INODES = 128;        // 我們只支援 128 個檔案 (簡化版)
+const uint64_t NUM_INODES = 128;        // 只支援 128 個檔案
 // Data Blocks 數量 = (總大小 / Block大小) - Metadata 所佔的空間
-// 這裡我們先簡單抓個大概，保留前 10 個 Block 給 Metadata
+// 先簡單抓個大概，保留前 10 個 Block 給 Metadata
 const uint64_t NUM_DATA_BLOCKS = (DISK_SIZE / BLOCK_SIZE) - 10; // 2560 - 10 = 2550
 const uint64_t DATA_BLOCK_START = 10; // Data Block 從第 10 號 Block 開始
 
@@ -36,8 +36,8 @@ struct Inode {
     uint32_t inode_no;      // 4 bytes  編號 (0 ~ 127)
     uint32_t size;          // 4 bytes  檔案大小 (Bytes)
 
-    // 為了極度簡化，我們假設一個檔案「最多只能佔用一個 Block (4KB)」
-    // 這樣我們就不需要實作複雜的 Block List 或 Indirection
+    // 先假設一個檔案「最多只能佔用一個 Block (4KB)」
+    // 這樣就先不需要實作複雜的 Block List 或 Indirection
     uint32_t block_no;      // 4 bytes  指向 Data Region 的第幾個 Block
     uint8_t  type;          // 1 byte   FileType
 

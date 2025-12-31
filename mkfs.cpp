@@ -23,7 +23,7 @@ int main() {
     // 2. 設定檔案大小為 10MB (ftruncate 會自動用 0 填滿)
     if (ftruncate(fd, DISK_SIZE) == -1) error_exit("ftruncate");
 
-    // --- 寫入 Superblock (Block 0) ---
+    // 寫入 Superblock (Block 0)
     Superblock sb;
     sb.magic = MYFS_MAGIC;
     sb.block_size = BLOCK_SIZE;
@@ -35,11 +35,7 @@ int main() {
         error_exit("write superblock");
     
     // 初始化 Inode Bitmap (Block 1)
-    // 我們需要標記 Inode 0 為「已使用」，因為 Inode 0 通常保留給根目錄 "/"
-    // 這裡我們先簡單跳過 Bitmap 的複雜操作，直接去初始化 Inode Table
-    // 在真實 Driver 中，你會在這裡把 Block 1 的第一個 bit 設為 1
-
-    // 我們必須標記 Inode 0 為「已使用」，否則 Create 會誤用 Inode 0 覆蓋根目錄
+    // 標記 Inode 0 為「已使用」，否則 Create 會誤用 Inode 0 覆蓋根目錄
     uint8_t inode_bitmap[BLOCK_SIZE];
     std::memset(inode_bitmap, 0, BLOCK_SIZE);
     // 設定第 0 個 byte 的第 0 個 bit 為 1 (代表 Inode 0 已佔用)

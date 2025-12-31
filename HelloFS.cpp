@@ -111,7 +111,7 @@ int HelloFS::AllocateResource(int bitmap_block_idx, int max_count) {
             return i; // 回傳編號
         }
     }
-    return -1; // 沒空間了 (鎖會在這裡自動釋放)
+    return -1;
 }
 
 // 更新 Bitmap
@@ -190,7 +190,7 @@ int HelloFS::Unlink(const char *path) {
     SetResourceStatus(1, inode.inode_no, false);
     std::cout << "[Unlink] Inode " << inode.inode_no << " freed." << std::endl;
 
-    // 4. (Optional) 清空 Inode Table 裡的資料
+    // 4. 清空 Inode Table 裡的資料
     // 雖然 Bitmap 設為 0 系統就不會配發這個 Inode 了，但把舊資料擦掉是好習慣
     // 這樣下次分配到這個 Inode 時，不會讀到上一個檔案的殘留檔名
     Inode empty_inode;
@@ -235,10 +235,10 @@ int HelloFS::Truncate(const char *path, off_t new_size, struct fuse_file_info *f
     off_t inode_offset = (3 * BLOCK_SIZE) + (inode.inode_no * sizeof(Inode));
     pwrite(m_fd, &inode, sizeof(Inode), inode_offset);
 
-    // 進階 (Optional): 
+    // Optional: 
     // 如果 new_size == 0，其實應該要把 Data Bitmap 對應的 bit 清成 0 (釋放空間)。
     // 如果 new_size < old_size，應該要把切掉的資料清空。
-    // 但目前我們先做到「更新 Size」就好，這樣就能解決 "Ghost Tail" 的問題。
+    // 但目前先做到「更新 Size」就好，這樣就能解決 "Ghost Tail" 的問題。
 
     return 0;
 }
